@@ -54,6 +54,11 @@ input,select{width:100%;padding:12px;border:1px solid var(--bd);border-radius:12
 #pk .pr .m{flex:1}
 #pk .pr small{display:block;color:var(--mu);font-size:12px}
 #pk .row .go{flex:1}
+#ed{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center}
+#ed.on{display:flex}
+#ed .sh{background:var(--card);color:var(--tx);width:100%;max-width:560px;max-height:92%;overflow:auto;border-radius:18px 18px 0 0;padding:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
+#ed .row .go{flex:1}
+.tx .d.e{font-size:17px}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
@@ -112,6 +117,7 @@ input,select{width:100%;padding:12px;border:1px solid var(--bd);border-radius:12
 </div>
 <div id="pv"><div class="bar"><button id="pvc">✕ بستن</button><button id="pvp" class="pp">📄 ذخیره PDF</button></div><div id="pvs"><div id="paper"></div></div></div>
 <div id="pk" class="noprint"></div>
+<div id="ed" class="noprint"></div>
 <div id="toast" role="status"></div>
 <script>
 const CATS=['خوراک','حمل‌ونقل','قبض','اجاره','خرید','صحت','تفریح','سایر'];
@@ -176,10 +182,54 @@ function render(){
   $('#cats').innerHTML=CATS.map(c=>`<button class="${c===cat?'on':''}" data-c="${c}">${c}</button>`).join('');
   $('#cats').querySelectorAll('button').forEach(b=>b.onclick=()=>{cat=b.dataset.c;render()});
   const L=S.tx.slice().sort((a,b)=>b.iso.localeCompare(a.iso)||b.id-a.id);
-  $('#list').innerHTML=L.length?L.map(t=>`<div class="tx"><div>${esc(t.type==='in'?t.source:(t.note||t.cat))}<small>${esc(t.type==='in'?(t.note||''):(t.cat+' ← '+t.source))} ${fd(t.iso)}</small>${t.rate?`<small>نرخ روز: ${fa(t.rate)} ${esc(S.base)} ← معادل ${fa(t.amount*t.rate)} ${esc(S.base)}</small>`:''}</div><div><b class="${t.type}">${t.type==='in'?'+':'−'}${fa(t.amount)} ${esc(t.cur)}</b>${t.type==='in'?`<button class="d" data-lk="${t.id}" aria-label="لینک">🔗</button>`:''}<button class="d" data-id="${t.id}" aria-label="حذف">×</button></div></div>`).join(''):'<div class="empty">هنوز چیزی ثبت نشده</div>';
+  $('#list').innerHTML=L.length?L.map(t=>`<div class="tx"><div>${esc(t.type==='in'?t.source:(t.note||t.cat))}<small>${esc(t.type==='in'?(t.note||''):(t.cat+' ← '+t.source))} ${fd(t.iso)}</small>${t.rate?`<small>نرخ روز: ${fa(t.rate)} ${esc(S.base)} ← معادل ${fa(t.amount*t.rate)} ${esc(S.base)}</small>`:''}</div><div><b class="${t.type}">${t.type==='in'?'+':'−'}${fa(t.amount)} ${esc(t.cur)}</b>${t.type==='in'?`<button class="d" data-lk="${t.id}" aria-label="لینک">🔗</button>`:''}<button class="d e" data-ed="${t.id}" aria-label="ویرایش">✎</button><button class="d" data-id="${t.id}" aria-label="حذف">×</button></div></div>`).join(''):'<div class="empty">هنوز چیزی ثبت نشده</div>';
   $('#list').querySelectorAll('[data-lk]').forEach(b=>b.onclick=()=>shareLink(b.dataset.lk));
+  $('#list').querySelectorAll('[data-ed]').forEach(b=>b.onclick=()=>openEdit(b.dataset.ed));
   $('#list').querySelectorAll('.d[data-id]').forEach(b=>b.onclick=()=>{if(confirm('این مورد حذف شود؟')){S.tx=S.tx.filter(t=>t.id!=b.dataset.id);save();render()}});
 }
+
+function openEdit(id){
+  const t=S.tx.find(x=>String(x.id)===String(id));if(!t)return;
+  const p=t.iso.split('-').map(Number),j=g2j(p[0],p[1],p[2]);
+  let ecat=t.cat;
+  const isOut=t.type==='out',hasRate=!isOut&&t.cur!==S.base;
+  const ed=$('#ed');
+  const yrs=Array.from({length:7},(_,i)=>j[0]-5+i);
+  ed.innerHTML=`<div class="sh"><b>${isOut?'ویرایش مصرف':'ویرایش دریافتی'}</b>
+  <label>${isOut?'تفصیل مصرف':'توضیح (اختیاری)'}</label><input id="eDet" value="${esc(t.note||'')}">
+  <label>مبلغ (${esc(t.cur)})</label><input id="eAmt" inputmode="decimal" value="${t.amount}">
+  ${hasRate?`<label>نرخ روز: ۱ ${esc(t.cur)} = چند ${esc(S.base)}؟ (اختیاری)</label><input id="eRate" inputmode="decimal" value="${t.rate||''}">`:''}
+  ${isOut?`<label>دسته</label><div class="chips" id="eCats">${CATS.map(c=>`<button class="${c===ecat?'on':''}" data-c="${c}">${c}</button>`).join('')}</div>`:''}
+  <label>تاریخ (شمسی)</label>
+  <div class="row"><select id="eJd"></select><select id="eJm">${JM.map((n,i)=>`<option value="${i+1}" ${i+1===j[1]?'selected':''}>${n}</option>`).join('')}</select><select id="eJy">${yrs.map(y=>`<option value="${y}" ${y===j[0]?'selected':''}>${fy(y)}</option>`).join('')}</select></div>
+  <div class="row" style="margin-top:6px"><button class="go" data-a="cancel" style="background:var(--bg);color:var(--tx);border:1px solid var(--bd)">لغو</button><button class="go" data-a="ok">ذخیره</button></div></div>`;
+  const fill=sel=>{const n=dim(+$('#eJy').value,+$('#eJm').value),c=Math.min(sel||+$('#eJd').value||1,n);
+    $('#eJd').innerHTML=Array.from({length:n},(_,i)=>`<option value="${i+1}" ${i+1===c?'selected':''}>${fy(i+1)}</option>`).join('')};
+  fill(j[2]);
+  $('#eJy').onchange=$('#eJm').onchange=()=>fill();
+  const close=()=>{ed.classList.remove('on');ed.innerHTML='';ed.onclick=null};
+  ed.classList.add('on');
+  ed.onclick=e=>{
+    if(e.target===ed)return close();
+    const c=e.target.dataset&&e.target.dataset.c;
+    if(c){ecat=c;ed.querySelectorAll('#eCats button').forEach(b=>b.classList.toggle('on',b.dataset.c===c));return}
+    const a=e.target.dataset&&e.target.dataset.a;
+    if(a==='cancel')return close();
+    if(a!=='ok')return;
+    const amount=parseFloat(norm($('#eAmt').value));
+    if(!(amount>0)){alert('مبلغ را درست وارد کن');return}
+    const others=S.tx.filter(x=>x!==t&&x.source===t.source&&x.cur===t.cur).reduce((s,x)=>s+(x.type==='in'?x.amount:-x.amount),0);
+    const nb=others+(isOut?-amount:amount);
+    if(nb<0&&!confirm('بعد از این ویرایش موجودی «'+t.source+'» ('+fa(nb)+' '+t.cur+') منفی می‌شود. باز هم ذخیره شود؟'))return;
+    t.amount=amount;
+    t.note=$('#eDet').value.trim();
+    t.iso=getIsoOf($('#eJy').value,$('#eJm').value,$('#eJd').value);
+    if(isOut)t.cat=ecat;
+    if(hasRate){const r=parseFloat(norm($('#eRate').value));if(r>0){t.rate=r;S.rates[t.cur]=r}else delete t.rate}
+    save();close();render();toast('ویرایش شد ✓');
+  };
+}
+function getIsoOf(y,m,d){const g=j2g(+y,+m,+d);return g[0]+'-'+String(g[1]).padStart(2,'0')+'-'+String(g[2]).padStart(2,'0')}
 
 $('#go').onclick=()=>{
   const amount=parseFloat(norm($('#amt').value));
